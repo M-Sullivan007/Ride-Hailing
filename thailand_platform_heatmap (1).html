@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Thailand Platform Geographic Heatmap</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+    background: #f8f7f4;
+    color: #1a1a18;
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* ── header ── */
+  .header {
+    background: #fff;
+    border-bottom: 1px solid #e5e3dc;
+    padding: 20px 32px 16px;
+  }
+  .header-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #0f0f0d;
+    line-height: 1.3;
+  }
+  .header .sub {
+    font-size: 13px;
+    color: #6b6960;
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+  .badge {
+    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 20px;
+    border: 1px solid #d1cfc5;
+    color: #6b6960;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+
+  /* ── mode tabs ── */
+  .tab-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    font-size: 13px;
+    font-weight: 500;
+    padding: 7px 16px;
+    border-radius: 8px;
+    border: 1px solid #d1cfc5;
+    background: #fff;
+    color: #5a5a55;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tab-btn:hover { background: #f2f0ec; border-color: #b0aea4; }
+  .tab-btn.active { background: #1a1a18; color: #fff; border-color: #1a1a18; }
+  .tab-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── layout ── */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 0;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px 32px;
+    align-items: start;
+  }
+  @media (max-width: 820px) {
+    .main { grid-template-columns: 1fr; padding: 16px; }
+    .sidebar { order: -1; }
+  }
+
+  /* ── map panel ── */
+  .map-panel {
+    background: #fff;
+    border-radius: 12px;
+    border: 1px solid #e5e3dc;
+    padding: 20px;
+    position: relative;
+  }
+  .map-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #0f0f0d;
+    margin-bottom: 4px;
+  }
+  .map-sub {
+    font-size: 12px;
+    color: #8a8880;
+    margin-bottom: 16px;
+  }
+  #map-container {
+    width: 100%;
+    position: relative;
+  }
+  #tha-map {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .province-path {
+    stroke: #fff;
+    stroke-width: 0.6;
+    cursor: pointer;
+    transition: opacity 0.12s;
+  }
+  .province-path:hover { opacity: 0.82; stroke-width: 1.2; stroke: #1a1a18; }
+  .province-path.selected { stroke: #1a1a18; stroke-width: 1.8; }
+
+  /* ── legend ── */
+  .legend-wrap { margin-top: 16px; }
+  .legend-label { font-size: 11px; color: #8a8880; margin-bottom: 6px; }
+  .legend-bar {
+    display: flex;
+    height: 8px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 4px;
+  }
+  .legend-bar div { flex: 1; }
+  .legend-ends {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #8a8880;
+  }
+
+  /* ── sidebar ── */
+  .sidebar { padding-left: 20px; }
+  @media (max-width: 820px) { .sidebar { padding-left: 0; } }
+
+  .info-card {
+    background: #fff;
+    border: 1px solid #e5e3dc;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .info-card-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #8a8880;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 12px;
+  }
+
+  /* ── tier breakdown ── */
+  .tier-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid #f0ede8;
+    cursor: pointer;
+    transition: background 0.1s;
+    border-radius: 6px;
+    padding: 8px 6px;
+    margin: 0 -6px;
+  }
+  .tier-item:last-child { border-bottom: none; }
+  .tier-item:hover { background: #f8f7f4; }
+  .tier-item.active { background: #f2f0ec; }
+  .tier-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+  .tier-name { font-size: 13px; font-weight: 600; color: #0f0f0d; }
+  .tier-cities { font-size: 11px; color: #6b6960; margin-top: 1px; line-height: 1.4; }
+  .tier-stat { font-size: 11px; color: #1a6b44; font-weight: 500; margin-top: 2px; }
+
+  /* ── platform pills ── */
+  .pill-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .pill {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .pill-g  { background: #dbeafe; color: #1d4ed8; }
+  .pill-lm { background: #dcfce7; color: #15803d; }
+  .pill-b  { background: #fef3c7; color: #92400e; }
+  .pill-id { background: #ede9fe; color: #5b21b6; }
+  .pill-sh { background: #ffedd5; color: #c2410c; }
+  .pill-rb { background: #fce7f3; color: #9d174d; }
+  .pill-mx { background: #f1f5f9; color: #334155; }
+
+  /* ── province detail ── */
+  .detail-card {
+    background: #fff;
+    border: 1px solid #e5e3dc;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .detail-province-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #0f0f0d;
+    margin-bottom: 2px;
+  }
+  .detail-tier-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 9px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+  }
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid #f0ede8;
+    font-size: 13px;
+  }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-label { color: #6b6960; }
+  .detail-val { font-weight: 500; color: #0f0f0d; }
+
+  .score-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .score-bar-bg {
+    flex: 1;
+    height: 6px;
+    background: #f0ede8;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .score-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+
+  .note-box {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 11px;
+    color: #78350f;
+    line-height: 1.5;
+    margin-top: 10px;
+  }
+
+  /* ── tooltip ── */
+  .tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: #1a1a18;
+    color: #f8f7f4;
+    border-radius: 8px;
+    padding: 10px 13px;
+    font-size: 12px;
+    line-height: 1.6;
+    max-width: 220px;
+    z-index: 1000;
+    display: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  }
+  .tooltip strong { color: #fff; font-size: 13px; display: block; margin-bottom: 2px; }
+  .tooltip .t-muted { color: #a8a69e; }
+
+  /* ── source footnote ── */
+  .sources {
+    font-size: 11px;
+    color: #8a8880;
+    line-height: 1.6;
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: #f8f7f4;
+    border-radius: 8px;
+  }
+  .sources strong { color: #5a5a55; }
+
+  /* ── no-data placeholder ── */
+  .map-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #8a8880;
+    background: rgba(255,255,255,0.85);
+    border-radius: 8px;
+    z-index: 5;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div>
+      <h1>Thailand Platform Geographic Intensity Heatmap</h1>
+      <p class="sub">Ride-hailing &amp; food delivery platform coverage intensity by province tier · Data as of 2024–2026</p>
+    </div>
+    <span class="badge">TCCT Research · Part 0 Section 0.2</span>
+  </div>
+  <div class="tab-row" id="mode-tabs">
+    <button class="tab-btn active" data-mode="ride">
+      <span class="tab-dot" style="background:#2563eb;"></span>Ride-hailing intensity
+    </button>
+    <button class="tab-btn" data-mode="food">
+      <span class="tab-dot" style="background:#16a34a;"></span>Food delivery intensity
+    </button>
+    <button class="tab-btn" data-mode="comp">
+      <span class="tab-dot" style="background:#d97706;"></span>Competitive density
+    </button>
+  </div>
+</div>
+
+<div class="main">
+  <!-- left: map -->
+  <div>
+    <div class="map-panel">
+      <div class="map-title" id="map-title">Ride-hailing intensity by province</div>
+      <div class="map-sub" id="map-sub">Calibrated from platform coverage, usage growth data, and market share estimates. Hover over provinces for detail.</div>
+      <div id="map-container">
+        <svg id="tha-map" viewBox="0 0 500 900"></svg>
+        <div class="map-loading" id="map-loading">Loading Thailand map data…</div>
+      </div>
+      <div class="legend-wrap">
+        <div class="legend-label" id="legend-label">Intensity score (0 = absent → 100 = maximum)</div>
+        <div class="legend-bar" id="legend-bar"></div>
+        <div class="legend-ends"><span id="leg-lo">Very low / absent</span><span id="leg-hi">Very high / dominant</span></div>
+      </div>
+    </div>
+
+    <div class="sources" id="sources-box">
+      <strong>Sources:</strong> Verified Market Research (2025); Grab Thailand Year-End Reports 2024 &amp; 2025 (Nation Thailand, Dec 2024 &amp; Dec 2025); Mordor Intelligence Thailand Ride-Hailing Market (2026); Expat Focus Thailand (Mar 2026); Peerapat Thailand Food Delivery Market 2025–2026 (Aug 2025); LINE MAN Wongnai company disclosures (2024); Momentum Works SEA Food Delivery Report (2024); Thailand Quick Commerce Databook Q1 2026 (ResearchAndMarkets, Apr 2026); Phuket Expat Guide (Mar 2026). Province-level penetration rates not publicly disclosed by any platform; intensity scores are directional estimates based on growth data, competitive set size, and pricing behaviour.
+    </div>
+  </div>
+
+  <!-- right: sidebar -->
+  <div class="sidebar">
+    <!-- province detail (populated on click) -->
+    <div class="detail-card" id="detail-card">
+      <div style="font-size:13px;color:#8a8880;text-align:center;padding:8px 0;">
+        Click a province on the map to see detail
+      </div>
+    </div>
+
+    <!-- tier breakdown -->
+    <div class="info-card">
+      <div class="info-card-title">Province tiers</div>
+      <div id="tier-list"></div>
+    </div>
+
+    <!-- platform key -->
+    <div class="info-card">
+      <div class="info-card-title">Platform key</div>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;">
+        <div><span class="pill pill-g">Grab</span> <span style="color:#6b6960;">Ride + food + mart + parcel</span></div>
+        <div><span class="pill pill-lm">LINE MAN</span> <span style="color:#6b6960;">Ride (Feb 2024) + food (all 77 prov.)</span></div>
+        <div><span class="pill pill-b">Bolt</span> <span style="color:#6b6960;">Ride-hailing only · 13 cities</span></div>
+        <div><span class="pill pill-id">inDrive</span> <span style="color:#6b6960;">Ride-hailing · negotiated fare</span></div>
+        <div><span class="pill pill-mx">Maxim</span> <span style="color:#6b6960;">Ride-hailing · budget model</span></div>
+        <div><span class="pill pill-sh">ShopeeFood</span> <span style="color:#6b6960;">Food delivery · Bangkok-centric</span></div>
+        <div><span class="pill pill-rb">Robinhood</span> <span style="color:#6b6960;">Food + mart · upcountry expanding</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+/* ── data ─────────────────────────────────────────────────────────────── */
+const TIERS = [
+  {
+    id: "t1", label: "Tier 1", color: "#1d4ed8",
+    cities: "Bangkok Metro Region (BMR)",
+    stat: ">55% of national ride-hailing revenue",
+    ride: 100, food: 100, comp: 6,
+    ridePlatforms:  ["Grab","LINE MAN RIDE","Bolt","inDrive","Maxim","TADA"],
+    foodPlatforms:  ["GrabFood","LINE MAN","ShopeeFood","Robinhood"],
+    foodNote: "All four platforms active. ShopeeFood concentrated here — absent in Tiers 2–4. LINE MAN leads by transaction volume (44%, Redseer H1 2024); GrabFood leads by GMV value (46%, Momentum Works 2024).",
+    note: "Urban market saturating; platforms shifting investment to secondary cities (Peerapat, 2025)."
+  },
+  {
+    id: "t2", label: "Tier 2", color: "#3b82f6",
+    cities: "Chiang Mai · Phuket · Pattaya / Chonburi",
+    stat: "Chiang Mai: fastest CAGR at 9.86% (Mordor Intelligence, 2026)",
+    ride: 75, food: 70, comp: 5,
+    ridePlatforms:  ["Grab","Bolt","inDrive","LINE MAN RIDE"],
+    foodPlatforms:  ["GrabFood","LINE MAN","Robinhood (expanding)"],
+    foodNote: "ShopeeFood absent. LINE MAN often carries local restaurants not on GrabFood — lower commissions attract SME restaurants (Phuket Expat Guide, 2026). Robinhood expanding post-Foodpanda exit (May 2025).",
+    note: "Phuket pricing premium documented — Grab operates with reduced competitive constraint on islands (Phuket Expat Guide, 2026)."
+  },
+  {
+    id: "t3", label: "Tier 3", color: "#60a5fa",
+    cities: "Udon Thani · Ubon Ratchathani · Chiang Rai · Phitsanulok · Nakhon Sawan · Khon Kaen · Nakhon Nayok",
+    stat: "90% usage growth in 2024 (Grab Year-End Report, Dec 2024)",
+    ride: 48, food: 38, comp: 3,
+    ridePlatforms:  ["Grab","Bolt","inDrive"],
+    foodPlatforms:  ["GrabFood","LINE MAN"],
+    foodNote: "ShopeeFood and Robinhood absent. LINE MAN has the deepest provincial network — 77 provinces, 1 in 4 districts, 500,000+ restaurants (ThaiPR, Dec 2024). GrabFood present but district-level restaurant density is lower than LINE MAN in many secondary provinces.",
+    note: "Government promotion of secondary cities drove demand. Nakhon Nayok: 9× ride demand growth in 2024 (Nation Thailand, Dec 2025)."
+  },
+  {
+    id: "t4", label: "Tier 4", color: "#bfdbfe",
+    cities: "Remote provinces · Koh Samui · Koh Tao · Rural Northeast &amp; South",
+    stat: "Grab near-monopoly on several islands",
+    ride: 22, food: 18, comp: 1,
+    ridePlatforms:  ["Grab (sole or dominant)"],
+    foodPlatforms:  ["GrabFood","LINE MAN (limited districts)"],
+    foodNote: "LINE MAN's 77-province claim reflects registered service areas — not uniform restaurant density. At this tier, per-order logistics costs rise sharply as route distances lengthen and order density falls (Mordor Intelligence, 2026). ShopeeFood and Robinhood absent.",
+    note: "Koh Samui: Bolt and inDrive absent; Grab operates without meaningful competitive constraint. No app-based ride-hailing on Koh Tao, Koh Lipe."
+  },
+];
+
+/* Province → tier mapping (used to color the choropleth) */
+const PROVINCE_TIERS = {
+  "Bangkok": "t1","Nonthaburi": "t1","Pathum Thani": "t1",
+  "Samut Prakan": "t1","Samut Sakhon": "t1","Nakhon Pathom": "t1",
+  "Chiang Mai": "t2","Phuket": "t2","Chon Buri": "t2",
+  "Chiang Rai": "t3","Udon Thani": "t3","Ubon Ratchathani": "t3",
+  "Phitsanulok": "t3","Nakhon Sawan": "t3","Khon Kaen": "t3",
+  "Nakhon Nayok": "t3","Lampang": "t3","Nakhon Ratchasima": "t3",
+  "Songkhla": "t3","Phuket": "t2","Rayong": "t3",
+  "Surat Thani": "t4","Krabi": "t3","Kanchanaburi": "t3",
+};
+
+/* Extra province-level notes */
+const PROVINCE_NOTES = {
+  "Bangkok": "Accounts for >55% of national ride-hailing revenue. All 6 ride-hailing and 4 food delivery platforms active.",
+  "Chiang Mai": "Fastest CAGR among major cities at 9.86%. Full Grab, Bolt, inDrive, LINE MAN RIDE coverage. Strong tourist usage.",
+  "Phuket": "Pricing premium documented vs Bangkok. LINE MAN has strong local restaurant coverage. Island geography constrains driver supply.",
+  "Chon Buri": "Includes Pattaya. Strong tourist demand. All major ride platforms present.",
+  "Udon Thani": "Top-5 secondary province by ride-hailing usage (Grab, 2024/2025).",
+  "Ubon Ratchathani": "Top-5 secondary province by ride-hailing usage (Grab, 2024/2025).",
+  "Chiang Rai": "Top-5 secondary province. Usage +90% in 2024.",
+  "Phitsanulok": "Top-5 secondary province. Usage +90% in 2024.",
+  "Nakhon Sawan": "Top-5 secondary province by ride-hailing usage.",
+  "Nakhon Nayok": "Fastest-rising province 2024: ride demand up 9× (Nation Thailand, Dec 2025). Proximity to Bangkok drives day-trip tourism.",
+  "Surat Thani": "Gateway to Koh Samui. Grab dominant; limited Bolt/inDrive presence on islands.",
+  "Songkhla": "Hat Yai: growing secondary city. Grab + Bolt present.",
+};
+
+const MODE_CONFIG = {
+  ride: {
+    label: "Ride-hailing intensity by province",
+    sub: "Calibrated from platform coverage confirmations, usage growth data, and competitive set size. Hover provinces for detail.",
+    colorScale: v => {
+      if (v >= 90) return "#1e3a8a";
+      if (v >= 65) return "#1d4ed8";
+      if (v >= 45) return "#3b82f6";
+      if (v >= 28) return "#93c5fd";
+      return "#dbeafe";
+    },
+    legLo: "Very low / absent", legHi: "Very high / dominant",
+    swatches: ["#dbeafe","#93c5fd","#3b82f6","#1d4ed8","#1e3a8a"],
+    metricKey: "ride",
+    tierColorKey: "ride",
+    sources: "Sources: Verified Market Research (2025); Grab Year-End Reports 2024 & 2025 (Nation Thailand); Mordor Intelligence (2026); Expat Focus Thailand (Mar 2026)."
+  },
+  food: {
+    label: "Food delivery intensity by province",
+    sub: "Based on platform coverage, market share estimates, and provincial penetration data. Hover provinces for detail.",
+    colorScale: v => {
+      if (v >= 90) return "#14532d";
+      if (v >= 65) return "#15803d";
+      if (v >= 45) return "#22c55e";
+      if (v >= 28) return "#86efac";
+      return "#dcfce7";
+    },
+    legLo: "Very low / absent", legHi: "Very high / dominant",
+    swatches: ["#dcfce7","#86efac","#22c55e","#15803d","#14532d"],
+    metricKey: "food",
+    sources: "Sources: Momentum Works (2024); LINE MAN Wongnai disclosures (2024); Peerapat (Aug 2025); Thailand Quick Commerce Databook Q1 2026 (ResearchAndMarkets); Phuket Expat Guide (Mar 2026)."
+  },
+  comp: {
+    label: "Competitive density — active platforms by province",
+    sub: "Number of distinct platform operators with confirmed coverage. Hover provinces for detail.",
+    colorScale: v => {
+      if (v >= 90) return "#78350f";
+      if (v >= 65) return "#b45309";
+      if (v >= 45) return "#d97706";
+      if (v >= 28) return "#fcd34d";
+      return "#fef3c7";
+    },
+    legLo: "1 platform (Grab only)", legHi: "5–6 platforms",
+    swatches: ["#fef3c7","#fcd34d","#d97706","#b45309","#78350f"],
+    metricKey: "comp",
+    sources: "Sources: Bolt Thailand city list (2024); inDrive Thailand (2024); LINE MAN Wongnai (all 77 provinces); ShopeeFood (Bangkok-centric); platform press releases."
+  }
+};
+
+/* tier → score lookup for provinces not in PROVINCE_TIERS */
+function tierScore(tier, mode) {
+  const t = TIERS.find(x => x.id === tier);
+  if (!t) return 15;
+  return mode === "comp" ? t.comp * 16.6 : mode === "food" ? t.food : t.ride;
+}
+
+function provinceScore(name, mode) {
+  let tier = PROVINCE_TIERS[name];
+  if (!tier) {
+    if (name.includes("Bangkok") || name.includes("Nonthaburi") || name.includes("Pathum") || name.includes("Samut")) tier = "t1";
+    else if (name.includes("Chiang Mai") || name.includes("Phuket") || name.includes("Chon Buri") || name.includes("Rayong") || name.includes("Chonburi")) tier = "t2";
+    else if (name.includes("Chiang Rai") || name.includes("Udon") || name.includes("Ubon") || name.includes("Phitsanulok") || name.includes("Khon Kaen") || name.includes("Nakhon Sawan") || name.includes("Nakhon Nayok") || name.includes("Lampang") || name.includes("Nakhon Ratchasima") || name.includes("Songkhla") || name.includes("Hat Yai") || name.includes("Kanchanaburi") || name.includes("Krabi")) tier = "t3";
+    else tier = "t4";
+  }
+  return tierScore(tier, mode);
+}
+
+function provinceTier(name) {
+  let tier = PROVINCE_TIERS[name];
+  if (!tier) {
+    if (name.includes("Bangkok") || name.includes("Nonthaburi") || name.includes("Pathum") || name.includes("Samut")) return "t1";
+    if (name.includes("Chiang Mai") || name.includes("Phuket") || name.includes("Chon Buri") || name.includes("Rayong")) return "t2";
+    if (name.includes("Chiang Rai") || name.includes("Udon") || name.includes("Ubon") || name.includes("Phitsanulok") || name.includes("Khon Kaen") || name.includes("Nakhon Sawan") || name.includes("Nakhon Nayok") || name.includes("Lampang") || name.includes("Nakhon Ratchasima") || name.includes("Songkhla") || name.includes("Kanchanaburi") || name.includes("Krabi")) return "t3";
+    return "t4";
+  }
+  return tier;
+}
+
+/* ── pill helpers ── */
+const PILL_CLASS = {
+  "Grab":"pill-g","GrabFood":"pill-g","GrabMart":"pill-g",
+  "LINE MAN RIDE":"pill-lm","LINE MAN":"pill-lm","LINE MAN (partial)":"pill-lm",
+  "Bolt":"pill-b","TADA":"pill-b",
+  "inDrive":"pill-id",
+  "Maxim":"pill-mx",
+  "ShopeeFood":"pill-sh",
+  "Robinhood (expanding)":"pill-rb","Robinhood":"pill-rb",
+  "GrabFood":"pill-g","LINE MAN (partial)":"pill-lm",
+  "Grab (sole or dominant)":"pill-g",
+};
+function pillHtml(name) {
+  const cls = PILL_CLASS[name] || "pill-g";
+  return `<span class="pill ${cls}">${name}</span>`;
+}
+
+/* ── state ── */
+let currentMode = "ride";
+let selectedProvince = null;
+let geoFeatures = [];
+
+/* ── render legend bar ── */
+function renderLegend(mode) {
+  const cfg = MODE_CONFIG[mode];
+  document.getElementById("map-title").textContent = cfg.label;
+  document.getElementById("map-sub").textContent = cfg.sub;
+  document.getElementById("legend-label").textContent =
+    mode === "comp" ? "Number of active platforms (1 = Grab only, 6 = all major platforms)" : "Intensity score (0 = absent → 100 = maximum)";
+  document.getElementById("leg-lo").textContent = cfg.legLo;
+  document.getElementById("leg-hi").textContent = cfg.legHi;
+  document.getElementById("sources-box").innerHTML =
+    `<strong>Sources:</strong> ${cfg.sources} Province-level penetration rates not publicly disclosed by any platform; intensity scores are directional estimates calibrated from growth data, competitive set size, and pricing behaviour.`;
+
+  const bar = document.getElementById("legend-bar");
+  bar.innerHTML = cfg.swatches.map(c => `<div style="background:${c};"></div>`).join("");
+}
+
+/* ── render tier list ── */
+function renderTierList(mode) {
+  const container = document.getElementById("tier-list");
+  const platforms = mode === "food" ? "foodPlatforms" : "ridePlatforms";
+  container.innerHTML = TIERS.map(t => {
+    const noteStr = mode === "food" && t.foodNote
+      ? `<div style="font-size:11px;color:#6b6960;margin-top:5px;line-height:1.5;font-style:italic;">${t.foodNote}</div>`
+      : "";
+    return `
+    <div class="tier-item" data-tier="${t.id}" onclick="selectTier('${t.id}')">
+      <div>
+        <span class="tier-dot" style="background:${MODE_CONFIG[mode].colorScale(t[MODE_CONFIG[mode].metricKey])};display:inline-block;width:10px;height:10px;border-radius:50%;margin-top:3px;"></span>
+      </div>
+      <div>
+        <div class="tier-name">${t.label}</div>
+        <div class="tier-cities">${t.cities.replace(/&amp;/g,"&")}</div>
+        <div class="tier-stat">${t.stat}</div>
+        <div class="pill-row">${t[platforms].map(p => pillHtml(p)).join("")}</div>
+        ${noteStr}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function selectTier(tierId) {
+  document.querySelectorAll(".tier-item").forEach(el => el.classList.remove("active"));
+  const el = document.querySelector(`[data-tier="${tierId}"]`);
+  if (el) el.classList.add("active");
+
+  const t = TIERS.find(x => x.id === tierId);
+  if (!t) return;
+  const platforms = currentMode === "food" ? t.foodPlatforms : t.ridePlatforms;
+  const score = currentMode === "comp" ? t.comp : currentMode === "food" ? t.food : t.ride;
+  const scoreLabel = currentMode === "comp" ? `${t.comp} platforms` : `${score}/100`;
+  const scoreColor = MODE_CONFIG[currentMode].colorScale(score);
+
+  document.getElementById("detail-card").innerHTML = `
+    <div class="detail-province-name">${t.label}: ${t.cities.replace(/&amp;/g,"&").split("·")[0].trim()}</div>
+    <div class="detail-tier-badge" style="background:${scoreColor}22;color:${scoreColor};border:1px solid ${scoreColor}44;">${t.label} · ${scoreLabel}</div>
+    <div class="detail-row"><span class="detail-label">Ride intensity</span><div class="score-bar-wrap"><div class="score-bar-bg"><div class="score-bar-fill" style="width:${t.ride}%;background:${MODE_CONFIG.ride.colorScale(t.ride)};"></div></div><span class="detail-val" style="min-width:32px;text-align:right;">${t.ride}</span></div></div>
+    <div class="detail-row"><span class="detail-label">Food intensity</span><div class="score-bar-wrap"><div class="score-bar-bg"><div class="score-bar-fill" style="width:${t.food}%;background:${MODE_CONFIG.food.colorScale(t.food)};"></div></div><span class="detail-val" style="min-width:32px;text-align:right;">${t.food}</span></div></div>
+    <div class="detail-row"><span class="detail-label">Active platforms</span><span class="detail-val">${t.comp}</span></div>
+    <div class="detail-row" style="border:none;align-items:flex-start;"><span class="detail-label">Platforms</span></div>
+    <div class="pill-row" style="margin-top:4px;">${platforms.map(p => pillHtml(p)).join("")}</div>
+    ${currentMode === "food" && t.foodNote ? `<div class="note-box" style="background:#f0fdf4;border-left-color:#16a34a;">${t.foodNote}</div>` : ""}
+    <div class="note-box">${t.note}</div>
+  `;
+}
+
+/* ── render map ── */
+function colorFeature(feature, mode) {
+  const name = feature.properties
+    ? (feature.properties.name || feature.properties.NAME || feature.properties.shapeName || "")
+    : "";
+  const score = provinceScore(name, mode);
+  return MODE_CONFIG[mode].colorScale(score);
+}
+
+function drawMap(features, mode) {
+  const svg = d3.select("#tha-map");
+  svg.selectAll("path").attr("fill", d => colorFeature(d, mode));
+}
+
+function initMap() {
+  const url = "https://cdn.jsdelivr.net/npm/datamaps@0.5.10/src/js/data/tha.topo.json";
+  d3.json(url).then(topo => {
+    document.getElementById("map-loading").style.display = "none";
+    const key = Object.keys(topo.objects)[0];
+    const collection = topojson.feature(topo, topo.objects[key]);
+    geoFeatures = collection.features;
+
+    const svg = d3.select("#tha-map");
+    const proj = d3.geoMercator().fitSize([500, 900], collection);
+    const path = d3.geoPath(proj);
+    const tooltip = document.getElementById("tooltip");
+
+    svg.selectAll("path")
+      .data(geoFeatures)
+      .join("path")
+      .attr("class", "province-path")
+      .attr("d", path)
+      .attr("fill", d => colorFeature(d, currentMode))
+      .on("mousemove", function(event, d) {
+        const name = d.properties
+          ? (d.properties.name || d.properties.NAME || d.properties.shapeName || "Province")
+          : "Province";
+        const score = provinceScore(name, currentMode);
+        const tier = provinceTier(name);
+        const tierObj = TIERS.find(t => t.id === tier);
+        const note = PROVINCE_NOTES[name] || (tierObj ? tierObj.note : "");
+        const scoreLabel = currentMode === "comp"
+          ? `${Math.round(score / 16.6)} active platforms`
+          : `Intensity: ${Math.round(score)}/100`;
+
+        tooltip.style.display = "block";
+        tooltip.style.left = (event.clientX + 14) + "px";
+        tooltip.style.top  = (event.clientY - 10) + "px";
+        tooltip.innerHTML = `
+          <strong>${name}</strong>
+          <span class="t-muted">${tierObj ? tierObj.label : ""} · ${scoreLabel}</span>
+          ${note ? `<br><span style="font-size:11px;color:#d4d0c8;margin-top:2px;display:block;">${note}</span>` : ""}
+        `;
+      })
+      .on("mouseleave", () => { tooltip.style.display = "none"; })
+      .on("click", function(event, d) {
+        const name = d.properties
+          ? (d.properties.name || d.properties.NAME || d.properties.shapeName || "Province")
+          : "Province";
+        svg.selectAll("path").classed("selected", false);
+        d3.select(this).classed("selected", true);
+        showProvinceDetail(name);
+      });
+
+  }).catch(err => {
+    document.getElementById("map-loading").innerHTML =
+      `<div style="text-align:center;padding:20px;">
+        <p style="color:#dc2626;font-weight:500;">Could not load map topology.</p>
+        <p style="color:#8a8880;font-size:12px;margin-top:6px;">Open this file in a browser with internet access.<br>CDN required: cdn.jsdelivr.net</p>
+      </div>`;
+  });
+}
+
+function showProvinceDetail(name) {
+  const score = provinceScore(name, currentMode);
+  const tier = provinceTier(name);
+  const tierObj = TIERS.find(t => t.id === tier);
+  if (!tierObj) return;
+  const platforms = currentMode === "food" ? tierObj.foodPlatforms : tierObj.ridePlatforms;
+  const scoreColor = MODE_CONFIG[currentMode].colorScale(score);
+  const scoreLabel = currentMode === "comp"
+    ? `${Math.round(score / 16.6)} platforms`
+    : `${Math.round(score)}/100`;
+  const note = PROVINCE_NOTES[name] || tierObj.note;
+
+  document.getElementById("detail-card").innerHTML = `
+    <div class="detail-province-name">${name}</div>
+    <div class="detail-tier-badge" style="background:${scoreColor}22;color:${scoreColor};border:1px solid ${scoreColor}44;">${tierObj.label} · ${scoreLabel}</div>
+    <div class="detail-row">
+      <span class="detail-label">Ride intensity</span>
+      <div class="score-bar-wrap">
+        <div class="score-bar-bg"><div class="score-bar-fill" style="width:${tierObj.ride}%;background:${MODE_CONFIG.ride.colorScale(tierObj.ride)};"></div></div>
+        <span class="detail-val" style="min-width:32px;text-align:right;">${tierObj.ride}</span>
+      </div>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Food intensity</span>
+      <div class="score-bar-wrap">
+        <div class="score-bar-bg"><div class="score-bar-fill" style="width:${tierObj.food}%;background:${MODE_CONFIG.food.colorScale(tierObj.food)};"></div></div>
+        <span class="detail-val" style="min-width:32px;text-align:right;">${tierObj.food}</span>
+      </div>
+    </div>
+    <div class="detail-row">
+      <span class="detail-label">Active platforms</span>
+      <span class="detail-val">${tierObj.comp}</span>
+    </div>
+    <div class="detail-row" style="border:none;padding-bottom:4px;">
+      <span class="detail-label">Platforms (${currentMode === "food" ? "food" : "ride"})</span>
+    </div>
+    <div class="pill-row">${platforms.map(p => pillHtml(p)).join("")}</div>
+    ${note ? `<div class="note-box">${note}</div>` : ""}
+  `;
+}
+
+/* ── mode switch ── */
+document.getElementById("mode-tabs").addEventListener("click", e => {
+  const btn = e.target.closest(".tab-btn");
+  if (!btn) return;
+  currentMode = btn.dataset.mode;
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b === btn));
+  renderLegend(currentMode);
+  renderTierList(currentMode);
+  if (geoFeatures.length) drawMap(geoFeatures, currentMode);
+  document.getElementById("detail-card").innerHTML = `<div style="font-size:13px;color:#8a8880;text-align:center;padding:8px 0;">Click a province on the map to see detail</div>`;
+  document.querySelectorAll(".tier-item").forEach(el => el.classList.remove("active"));
+});
+
+/* ── init ── */
+renderLegend("ride");
+renderTierList("ride");
+initMap();
+</script>
+</body>
+</html>
